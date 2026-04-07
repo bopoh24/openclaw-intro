@@ -1,0 +1,10 @@
+# Copy this file to terraform.tfvars and fill in the values
+# cp terraform.tfvars.example terraform.tfvars
+
+hcloud_token = "YOUR_HETZNER_API_TOKEN"
+
+# Optional — override defaults from variables.tf:
+# server_type         = "cax11"       # ARM64: 2 vCPU / 4 GB / 40 GB — ~3.79 €/mo
+# location            = "nbg1"
+# ssh_public_key_path = "~/.ssh/id_ed25519.pub"
+# ssh_allowed_ips     = ["1.2.3.4/32"]  # ← restrict to your own IP

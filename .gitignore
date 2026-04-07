@@ -1,0 +1,14 @@
+# Terraform state (secrets — do not commit)
+terraform/terraform.tfvars
+terraform/terraform.tfstate
+terraform/terraform.tfstate.backup
+terraform/.terraform/
+
+# OpenClaw runtime data
+.env
+config/
+workspace/
+
+# OS
+.DS_Store
+.idea

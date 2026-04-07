@@ -1,0 +1,160 @@
+version: '3'
+
+tasks:
+
+  # ── Deploy ────────────────────────────────────────────────────
+  deploy:
+    desc: "Full deploy: wait for server, copy files, start OpenClaw"
+    dir: terraform
+    cmds:
+      - |
+        set -e
+        IP=$(terraform output -raw server_ip)
+
+        # Remove stale host key to avoid "Host key changed" error
+        ssh-keygen -R $IP 2>/dev/null || true
+
+        # Wait for SSH (up to 5 minutes)
+        echo "⏳ Waiting for SSH on $IP..."
+        for i in $(seq 1 30); do
+          ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new root@$IP "true" 2>/dev/null && echo "✅ SSH ready" && break
+          echo "   attempt $i/30, retrying in 10s..."
+          sleep 10
+        done
+
+        # Wait for cloud-init — Docker must be installed
+        echo "⏳ Waiting for cloud-init (Docker installation)..."
+        ssh -o StrictHostKeyChecking=accept-new root@$IP "cloud-init status --wait 2>/dev/null; docker info > /dev/null 2>&1 && echo '✅ Docker ready' || (echo '❌ Docker not installed'; exit 1)"
+
+        # Generate token if empty
+        ENV_FILE="../.env"
+        if [ ! -f "$ENV_FILE" ]; then cp ../.env.example "$ENV_FILE"; fi
+        if ! grep -qE "^OPENCLAW_GATEWAY_TOKEN=.+" "$ENV_FILE" 2>/dev/null; then
+          TOKEN=$(openssl rand -hex 32)
+          sed -i '' "s|^OPENCLAW_GATEWAY_TOKEN=.*|OPENCLAW_GATEWAY_TOKEN=$TOKEN|" "$ENV_FILE"
+          echo "✅ Generated OPENCLAW_GATEWAY_TOKEN"
+        fi
+
+        # Copy files to server
+        ssh root@$IP "mkdir -p /opt/openclaw/config /opt/openclaw/workspace && chown -R 1000:1000 /opt/openclaw"
+        scp ../docker-compose.yml root@$IP:/opt/openclaw/docker-compose.yml
+        scp "$ENV_FILE" root@$IP:/opt/openclaw/.env
+
+        # Copy gateway config (bind=lan + allowInsecureAuth to bypass Docker NAT pairing)
+        scp ../openclaw.json root@$IP:/opt/openclaw/config/openclaw.json
+        ssh root@$IP "chown 1000:1000 /opt/openclaw/config/openclaw.json"
+
+        # Start
+        ssh root@$IP "cd /opt/openclaw && docker compose pull && docker compose up -d --force-recreate"
+
+        echo ""
+        echo "✅ OpenClaw deployed to $IP"
+        echo "   Open the Control UI:  task dashboard"
+        echo "   Then visit:           http://127.0.0.1:18789"
+        echo "   Token: $(grep OPENCLAW_GATEWAY_TOKEN "$ENV_FILE" | cut -d= -f2)"
+
+  # ── OpenClaw ──────────────────────────────────────────────────
+  up:
+    desc: "Start openclaw-gateway"
+    dir: terraform
+    cmds:
+      - ssh root@$(terraform output -raw server_ip) "cd /opt/openclaw && docker compose up -d"
+
+  down:
+    desc: "Stop openclaw-gateway"
+    dir: terraform
+    cmds:
+      - ssh root@$(terraform output -raw server_ip) "cd /opt/openclaw && docker compose down"
+
+  restart:
+    desc: "Restart openclaw-gateway"
+    dir: terraform
+    cmds:
+      - ssh root@$(terraform output -raw server_ip) "cd /opt/openclaw && docker compose restart openclaw-gateway"
+
+  update:
+    desc: "Pull latest image and restart"
+    dir: terraform
+    cmds:
+      - ssh root@$(terraform output -raw server_ip) "cd /opt/openclaw && docker compose pull && docker compose up -d"
+
+  status:
+    desc: "Show container status"
+    dir: terraform
+    cmds:
+      - ssh root@$(terraform output -raw server_ip) "cd /opt/openclaw && docker compose ps"
+
+  logs:
+    desc: "Follow gateway logs (Ctrl+C to exit)"
+    dir: terraform
+    cmds:
+      - ssh root@$(terraform output -raw server_ip) "cd /opt/openclaw && docker compose logs -f openclaw-gateway"
+
+  # ── Control UI ────────────────────────────────────────────────
+  dashboard:
+    desc: "Open SSH tunnel → Control UI at http://127.0.0.1:18789"
+    dir: terraform
+    cmds:
+      - echo "Open http://127.0.0.1:18789 in your browser (Ctrl+C to close tunnel)"
+      - ssh -N -L 18789:127.0.0.1:18789 root@$(terraform output -raw server_ip)
+
+  # ── CLI shortcuts ─────────────────────────────────────────────
+  cli:
+    desc: "Run an openclaw-cli command (CMD='channels login')"
+    dir: terraform
+    cmds:
+      - ssh root@$(terraform output -raw server_ip) "cd /opt/openclaw && docker compose run --rm openclaw-cli {{.CMD}}"
+    requires:
+      vars: [CMD]
+
+  health:
+    desc: "Check gateway health endpoints"
+    dir: terraform
+    cmds:
+      - ssh root@$(terraform output -raw server_ip) "curl -fsS http://127.0.0.1:18789/healthz && echo ' liveness OK' && curl -fsS http://127.0.0.1:18789/readyz && echo ' readiness OK'"
+
+  # ── Terraform ─────────────────────────────────────────────────
+  tf:init:
+    desc: "Initialize Terraform"
+    dir: terraform
+    cmds:
+      - terraform init
+
+  tf:plan:
+    desc: "Preview infrastructure changes"
+    dir: terraform
+    cmds:
+      - terraform plan
+
+  tf:apply:
+    desc: "Create / update server"
+    dir: terraform
+    cmds:
+      - terraform apply
+
+  tf:destroy:
+    desc: "Destroy server"
+    dir: terraform
+    cmds:
+      - terraform destroy
+
+  tf:output:
+    desc: "Show server IP"
+    dir: terraform
+    cmds:
+      - terraform output
+
+  # ── SSH ───────────────────────────────────────────────────────
+  ssh:
+    desc: "SSH into the server"
+    dir: terraform
+    cmds:
+      - ssh root@$(terraform output -raw server_ip)
+
+  exec:
+    desc: "Run a command on the server (CMD='docker ps')"
+    dir: terraform
+    cmds:
+      - ssh root@$(terraform output -raw server_ip) "{{.CMD}}"
+    requires:
+      vars: [CMD]
