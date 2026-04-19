@@ -38,8 +38,6 @@ You will also need:
 ├── .env.example              # Environment variables template
 ├── .env                      # Your local env (not committed)
 ├── Taskfile.yml              # All commands (deploy, ssh, logs, etc.)
-├── scripts/
-│   └── fix-scopes.py         # Patch agent device to allow operator.write
 └── terraform/
     ├── main.tf               # Hetzner server + firewall + SSH key
     ├── variables.tf          # Input variables
@@ -143,16 +141,6 @@ This is an interactive process — follow the prompts to:
 2. Configure skills (Trello and others will be auto-detected if their env vars are set)
 3. Pair the agent with the gateway
 
-After onboarding, run this **once** to grant the agent full send permissions:
-
-```bash
-task fix:scopes
-```
-
-> **Why this is needed:** After onboarding the agent device is paired with `operator.read` only.
-> Without `operator.write` the agent can receive messages but **cannot send files or replies** back
-> to Telegram (or other channels). `task fix:scopes` patches `devices/paired.json` and restarts the gateway.
-
 > **Note:** If a skill's dependencies are already installed in the Docker image (e.g. `jq` for Trello),  
 > it won't appear in the installation step — but it **will** be active and visible in the dashboard.  
 > Make sure `TRELLO_API_KEY` and `TRELLO_TOKEN` are set in `.env` before onboarding.
@@ -192,7 +180,6 @@ task health       # check /healthz and /readyz endpoints
 
 task env:sync     # sync .env to server and recreate gateway (required after any .env change)
 task config:sync  # sync openclaw.json to server and recreate gateway
-task fix:scopes   # grant operator.write to paired agent (run once after onboard)
 
 task cli CMD='channels login'   # run openclaw-cli command
 

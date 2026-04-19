@@ -118,15 +118,6 @@ tasks:
     cmds:
       - ssh -t root@$(terraform output -raw server_ip) "cd /opt/openclaw && docker compose run --rm -ti openclaw-cli onboard"
 
-  fix:scopes:
-    desc: "Grant operator.write scope to the paired agent device (run once after onboard)"
-    dir: terraform
-    cmds:
-      - scp ../scripts/fix-scopes.py root@$(terraform output -raw server_ip):/tmp/fix-scopes.py
-      - ssh root@$(terraform output -raw server_ip) "python3 /tmp/fix-scopes.py"
-      - ssh root@$(terraform output -raw server_ip) "cd /opt/openclaw && docker compose restart openclaw-gateway"
-      - echo "✅ Scopes patched and gateway restarted"
-
   health:
     desc: "Check gateway health endpoints"
     dir: terraform
