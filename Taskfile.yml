@@ -38,6 +38,7 @@ tasks:
         # Copy files to server
         ssh root@$IP "mkdir -p /opt/openclaw/config /opt/openclaw/workspace && chown -R 1000:1000 /opt/openclaw"
         scp ../docker-compose.yml root@$IP:/opt/openclaw/docker-compose.yml
+        scp ../Dockerfile root@$IP:/opt/openclaw/Dockerfile
         scp "$ENV_FILE" root@$IP:/opt/openclaw/.env
 
         # Copy gateway config (bind=lan + allowInsecureAuth to bypass Docker NAT pairing)
@@ -45,7 +46,7 @@ tasks:
         ssh root@$IP "chown 1000:1000 /opt/openclaw/config/openclaw.json"
 
         # Start
-        ssh root@$IP "cd /opt/openclaw && docker compose pull && docker compose up -d --force-recreate"
+        ssh root@$IP "cd /opt/openclaw && docker compose pull 2>/dev/null || true && docker compose build && docker compose up -d --force-recreate"
 
         echo ""
         echo "✅ OpenClaw deployed to $IP"
@@ -73,10 +74,14 @@ tasks:
       - ssh root@$(terraform output -raw server_ip) "cd /opt/openclaw && docker compose restart openclaw-gateway"
 
   update:
-    desc: "Pull latest image and restart"
+    desc: "Copy files, rebuild image and restart"
     dir: terraform
     cmds:
-      - ssh root@$(terraform output -raw server_ip) "cd /opt/openclaw && docker compose pull && docker compose up -d"
+      - |
+        IP=$(terraform output -raw server_ip)
+        scp ../docker-compose.yml root@$IP:/opt/openclaw/docker-compose.yml
+        scp ../Dockerfile root@$IP:/opt/openclaw/Dockerfile
+        ssh root@$IP "cd /opt/openclaw && docker compose build --pull && docker compose up -d"
 
   status:
     desc: "Show container status"
@@ -107,11 +112,33 @@ tasks:
     requires:
       vars: [CMD]
 
+  onboard:
+    desc: "Run 'openclaw onboard' to connect a new agent"
+    dir: terraform
+    cmds:
+      - ssh -t root@$(terraform output -raw server_ip) "cd /opt/openclaw && docker compose run --rm -ti openclaw-cli onboard"
+
   health:
     desc: "Check gateway health endpoints"
     dir: terraform
     cmds:
       - ssh root@$(terraform output -raw server_ip) "curl -fsS http://127.0.0.1:18789/healthz && echo ' liveness OK' && curl -fsS http://127.0.0.1:18789/readyz && echo ' readiness OK'"
+
+  env:sync:
+    desc: "Sync .env to server and recreate gateway (picks up new env vars)"
+    dir: terraform
+    cmds:
+      - scp ../.env root@$(terraform output -raw server_ip):/opt/openclaw/.env
+      - ssh root@$(terraform output -raw server_ip) "cd /opt/openclaw && docker compose up -d --force-recreate openclaw-gateway"
+      - echo "✅ .env synced and gateway recreated"
+
+  config:sync:
+    desc: "Sync openclaw.json to server and restart gateway"
+    dir: terraform
+    cmds:
+      - scp ../openclaw.json root@$(terraform output -raw server_ip):/opt/openclaw/config/openclaw.json
+      - ssh root@$(terraform output -raw server_ip) "cd /opt/openclaw && docker compose restart openclaw-gateway"
+      - echo "✅ openclaw.json synced and gateway restarted"
 
   # ── Terraform ─────────────────────────────────────────────────
   tf:init:
