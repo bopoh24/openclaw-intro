@@ -51,8 +51,10 @@ You will also need:
 
 | Container | Image | Role |
 |---|---|---|
-| `openclaw-gateway` | `ghcr.io/openclaw/openclaw:latest` | AI agent gateway + Control UI |
+| `openclaw-gateway` | built from `Dockerfile` (based on `ghcr.io/openclaw/openclaw:latest`) | AI agent gateway + Control UI |
 | `openclaw-cli` | same | CLI helper (on-demand) |
+
+The `Dockerfile` extends the base OpenClaw image with extra system packages (`jq`, `golang`, `rust`, `bun`, `pnpm`, `brew`, etc.) required by agent skills.
 
 Port `18789` is bound to `127.0.0.1` on the server — accessible only via SSH tunnel.
 
@@ -94,6 +96,10 @@ Set it manually if you want a fixed token:
 # .env
 OPENCLAW_IMAGE=ghcr.io/openclaw/openclaw:latest
 OPENCLAW_GATEWAY_TOKEN=          # leave empty OR paste your own
+
+# Trello skill (optional)
+TRELLO_API_KEY=                  # from https://trello.com/power-ups/admin
+TRELLO_TOKEN=                    # generate at: https://trello.com/1/authorize?key=YOUR_KEY&scope=read,write&expiration=never&name=OpenClaw&response_type=token
 ```
 
 ### 3. Initialize Terraform
@@ -122,6 +128,25 @@ task deploy      # copy files, wait for Docker, start OpenClaw (~3-5 min)
 
 ---
 
+## Onboarding (connect an agent)
+
+After the first deploy, run onboarding to connect your AI agent to the gateway:
+
+```bash
+task onboard
+```
+
+This is an interactive process — follow the prompts to:
+1. Choose a channel (e.g. Telegram, Discord, etc.)
+2. Configure skills (Trello and others will be auto-detected if their env vars are set)
+3. Pair the agent with the gateway
+
+> **Note:** If a skill's dependencies are already installed in the Docker image (e.g. `jq` for Trello),  
+> it won't appear in the installation step — but it **will** be active and visible in the dashboard.  
+> Make sure `TRELLO_API_KEY` and `TRELLO_TOKEN` are set in `.env` before onboarding.
+
+---
+
 ## Access Control UI
 
 ```bash
@@ -147,11 +172,14 @@ task dashboard    # SSH tunnel → http://127.0.0.1:18789
 
 task up           # start containers
 task down         # stop containers
-task restart      # restart gateway
+task restart      # restart gateway (does NOT reload .env — use env:sync for that)
 task update       # pull latest image and restart
 task status       # show container status
 task logs         # follow gateway logs
 task health       # check /healthz and /readyz endpoints
+
+task env:sync     # sync .env to server and recreate gateway (required after any .env change)
+task config:sync  # sync openclaw.json to server and recreate gateway
 
 task cli CMD='channels login'   # run openclaw-cli command
 
