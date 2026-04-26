@@ -9,6 +9,9 @@ terraform/.terraform/
 config/
 workspace/
 
+# Live server config (pulled via `task config:pull`, not committed)
+openclaw.json
+
 # OS
 .DS_Store
 .idea

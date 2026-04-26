@@ -41,9 +41,14 @@ tasks:
         scp ../Dockerfile root@$IP:/opt/openclaw/Dockerfile
         scp "$ENV_FILE" root@$IP:/opt/openclaw/.env
 
-        # Copy gateway config (bind=lan + allowInsecureAuth to bypass Docker NAT pairing)
-        scp ../openclaw.json root@$IP:/opt/openclaw/config/openclaw.json
-        ssh root@$IP "chown 1000:1000 /opt/openclaw/config/openclaw.json"
+        # Copy initial gateway config only if not already present on server
+        if ! ssh root@$IP "test -f /opt/openclaw/config/openclaw.json" 2>/dev/null; then
+          echo "⚙️  No config on server — uploading openclaw.init.json..."
+          scp ../openclaw.init.json root@$IP:/opt/openclaw/config/openclaw.json
+          ssh root@$IP "chown 1000:1000 /opt/openclaw/config/openclaw.json"
+        else
+          echo "ℹ️  Config already exists on server — skipping (use 'task config:sync' to update)"
+        fi
 
         # Start
         ssh root@$IP "cd /opt/openclaw && docker compose pull 2>/dev/null || true && docker compose build && docker compose up -d --force-recreate"
@@ -132,12 +137,24 @@ tasks:
       - ssh root@$(terraform output -raw server_ip) "cd /opt/openclaw && docker compose up -d --force-recreate openclaw-gateway"
       - echo "✅ .env synced and gateway recreated"
 
-  config:sync:
-    desc: "Sync openclaw.json to server and restart gateway"
+  config:pull:
+    desc: "Pull live openclaw.json from server → local openclaw.json"
     dir: terraform
     cmds:
+      - scp root@$(terraform output -raw server_ip):/opt/openclaw/config/openclaw.json ../openclaw.json
+      - echo "✅ openclaw.json pulled from server"
+
+  config:sync:
+    desc: "Push local openclaw.json → server and restart gateway (run config:pull first to get latest)"
+    dir: terraform
+    cmds:
+      - |
+        if [ ! -f ../openclaw.json ]; then
+          echo "❌ openclaw.json not found locally. Run 'task config:pull' first."
+          exit 1
+        fi
       - scp ../openclaw.json root@$(terraform output -raw server_ip):/opt/openclaw/config/openclaw.json
-      - ssh root@$(terraform output -raw server_ip) "cd /opt/openclaw && docker compose restart openclaw-gateway"
+      - ssh root@$(terraform output -raw server_ip) "chown 1000:1000 /opt/openclaw/config/openclaw.json && cd /opt/openclaw && docker compose restart openclaw-gateway"
       - echo "✅ openclaw.json synced and gateway restarted"
 
   # ── Terraform ─────────────────────────────────────────────────

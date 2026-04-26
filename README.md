@@ -35,6 +35,8 @@ You will also need:
 ```
 .
 ├── docker-compose.yml        # OpenClaw gateway + CLI services
+├── Dockerfile                # Extends openclaw:latest with extra tools
+├── openclaw.init.json        # Initial gateway config (deployed once on first deploy)
 ├── .env.example              # Environment variables template
 ├── .env                      # Your local env (not committed)
 ├── Taskfile.yml              # All commands (deploy, ssh, logs, etc.)
@@ -122,7 +124,7 @@ task deploy      # copy files, wait for Docker, start OpenClaw (~3-5 min)
 - Wait for cloud-init to finish installing Docker
 - Auto-generate `OPENCLAW_GATEWAY_TOKEN` if empty
 - Clean up stale SSH known_hosts entries
-- Write `openclaw.json` with correct bind mode before container start
+- Upload `openclaw.init.json` as the initial gateway config **only if no config exists on the server yet** — subsequent deploys leave the live config untouched
 - Pull the image and start the container
 - Print the server IP and access token when done
 
@@ -144,6 +146,22 @@ This is an interactive process — follow the prompts to:
 > **Note:** If a skill's dependencies are already installed in the Docker image (e.g. `jq` for Trello),  
 > it won't appear in the installation step — but it **will** be active and visible in the dashboard.  
 > Make sure `TRELLO_API_KEY` and `TRELLO_TOKEN` are set in `.env` before onboarding.
+
+---
+
+## Updating gateway config
+
+The live gateway config lives on the server at `/opt/openclaw/config/openclaw.json` and is managed separately from the repo.
+
+```bash
+task config:pull  # 1. download live config from server → local openclaw.json
+# edit openclaw.json locally
+task config:sync  # 2. upload + restart gateway
+task logs         # 3. confirm clean restart
+```
+
+`openclaw.json` is in `.gitignore` — it contains credentials and is never committed.  
+`openclaw.init.json` is the committed template used only on the very first deploy of a new server.
 
 ---
 
@@ -179,7 +197,8 @@ task logs         # follow gateway logs
 task health       # check /healthz and /readyz endpoints
 
 task env:sync     # sync .env to server and recreate gateway (required after any .env change)
-task config:sync  # sync openclaw.json to server and recreate gateway
+task config:pull  # pull live openclaw.json from server → local file
+task config:sync  # push local openclaw.json → server and restart gateway
 
 task cli CMD='channels login'   # run openclaw-cli command
 
@@ -208,5 +227,5 @@ task deploy       # redeploy OpenClaw
 
 - Port `18789` is **not** exposed publicly — SSH tunnel only
 - Restrict `ssh_allowed_ips` to your own IP in `terraform.tfvars`
-- Never commit `terraform.tfvars` or `.env` — both are in `.gitignore`
+- Never commit `terraform.tfvars`, `.env`, or `openclaw.json` — all are in `.gitignore`
 
